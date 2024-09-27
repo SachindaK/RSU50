@@ -50,6 +50,90 @@ def granger_test_for_country(country_data, max_lag=3):
 # List of countries to be analyzed
 countries_to_analyze = ['Cambodia', 'China', 'India', 'Korea, Rep.', 'Malaysia', 'Singapore', 'Thailand', 'Vietnam', 'Sri Lanka']
 
+# Define a function to perform Granger causality test for a country and return p-values
+def granger_test_for_country(country_data, max_lag=3):
+    # Ensure there are no missing values in the data for the causality test
+    country_data = country_data.dropna()
+    
+    # Select the relevant columns for textile exports and reserves
+    causality_data = country_data[['Total reserves (includes gold, current US$) [FI.RES.TOTL.CD]', 'Textiles and Clothing Export (US$ Thousand)']]
+    
+    # Store p-values for each lag
+    p_values = []
+
+    # Perform Granger causality test and extract p-values
+    result = grangercausalitytests(causality_data, max_lag, verbose=False)
+    for lag, res in result.items():
+        p_value = res[0]['ssr_ftest'][1]  # Extract the p-value from the ssr F-test
+        p_values.append((lag, p_value))
+    
+    return p_values
+
+# Plot p-values for each country
+for country in countries_to_analyze:
+    print(f"\nGranger Causality Test for {country}")
+    
+    # Filter the data for the specific country
+    country_data = merged_data[merged_data['Country'] == country]
+    
+    # Perform Granger causality test and get p-values
+    try:
+        p_values = granger_test_for_country(country_data)
+        
+        # Convert p-values to a DataFrame for easier plotting
+        p_values_df = pd.DataFrame(p_values, columns=['Lag', 'p-value'])
+        
+        # Plot the p-values
+        plt.figure(figsize=(8, 5))
+        plt.plot(p_values_df['Lag'], p_values_df['p-value'], marker='o', linestyle='--', color='b')
+        plt.axhline(y=0.05, color='r', linestyle='-', label='Significance Level (0.05)')
+        plt.title(f'Granger Causality p-values for {country}')
+        plt.xlabel('Lag')
+        plt.ylabel('p-value')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+
+    except ValueError as e:
+        print(f"Error with {country}: {e}")
+
+# Plot p-values for multiple countries in a single graph
+plt.figure(figsize=(10, 6))
+
+for country in countries_to_analyze:
+    print(f"\nGranger Causality Test for {country}")
+    
+    # Filter the data for the specific country
+    country_data = merged_data[merged_data['Country'] == country]
+    
+    # Perform Granger causality test and get p-values
+    try:
+        p_values = granger_test_for_country(country_data)
+        
+        # Convert p-values to a DataFrame for easier plotting
+        p_values_df = pd.DataFrame(p_values, columns=['Lag', 'p-value'])
+        
+        # Plot the p-values for the country
+        plt.plot(p_values_df['Lag'], p_values_df['p-value'], marker='o', linestyle='--', label=country)
+    
+    except ValueError as e:
+        print(f"Error with {country}: {e}")
+
+# Add a horizontal line for the 0.05 significance level
+plt.axhline(y=0.05, color='r', linestyle='-', label='Significance Level (0.05)')
+
+# Add titles and labels
+plt.title('Granger Causality p-values for Multiple Countries')
+plt.xlabel('Lag')
+plt.ylabel('p-value')
+
+# Display legend
+plt.legend(loc='upper right', bbox_to_anchor=(1.15, 1))
+
+# Display grid and show the plot
+plt.grid(True)
+plt.show()
+
 # Loop over the countries
 for country in countries_to_analyze:
     print(f"\nGranger Causality Test for {country}")
