@@ -794,12 +794,14 @@ plt.grid(True)
 plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
 plt.show()
 
-"""###2.3.2. Estimating Potential Beyond Current Constraints - Use Relative or Normalized Indicators
+model.summary()
+
+"""###2.3.2. Estimating Potential Beyond Current Constraints - Use Relative or Normalized Indicators - Linear Regression
 
 When estimating potential textile exports, the goal is to assess what Sri Lanka could achieve under different conditions or by performing at the level of comparator countries. Using Sri Lanka's actual economic indicators (like GDP, population, etc.) may not fully capture this potential if those indicators themselves reflect current limitations or underperformance.
 """
 
-merged_data.info()
+# merged_data.info()
 
 # create a list of our conditions
 conditions = [
@@ -871,18 +873,13 @@ for col in indicators:
 for col in indicators:
     df_sri_lanka2['Std_' + col] = (df_sri_lanka2[col] - means[col]) / stds[col]
 
-means
-
-# Select standardized independent variables
-# independent_vars = ['Std_GDP_per_Capita', 'Std_Population']#, 'Std_Textile_Exports_to_GDP', 'Std_Reserves_per_Capita']
-# independent_vars = ['Std_GDP_per_Capita', 'Std_Textile_Exports_to_GDP', 'Std_Reserves_per_Capita']
-# independent_vars = ['Std_GDP_per_Capita', 'Std_Reserves_per_Capita']
-# independent_vars = ['Std_GDP_per_Capita', 'Std_Textile_Export_Growth']#, 'Std_Population']#, 'Textile_Export_Growth']
-
 # independent_vars = ['GDP_per_Capita', 'Population_Density', 'Log_Textile_Export_Growth'] # 2nd Best Approach
 
 independent_vars = ['GDP_per_Capita', 'Population_Density', 'Log_Textile_Export_Growth', 'Reserves_per_Capita'] # The Best
-# independent_vars = ['Log_Textile_Export_Growth', 'Log_Lag_Textile_Exports']#,'Std_Reserves_to_GDP']
+# independent_vars = ['GDP_per_Capita', 'Population_Density', 'Textile_Export_Growth']
+# independent_vars = ['Std_GDP_per_Capita', 'Std_Population']#, 'Std_Textile_Exports_to_GDP', 'Std_Reserves_per_Capita']
+# independent_vars = ['Std_GDP_per_Capita', 'Std_Textile_Exports_to_GDP', 'Std_Reserves_per_Capita']
+# independent_vars = ['Std_GDP_per_Capita', 'Std_Reserves_per_Capita']
 
 # df_comparators.dropna(subset=independent_vars, inplace=True)
 
@@ -914,8 +911,8 @@ df_sri_lanka2['Predicted_Textile_Exports_per_Capita'] = (df_sri_lanka2['Std_Pred
 # Plot actual vs. predicted textile exports
 plt.figure(figsize=(12, 6))
 plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Textile_Exports'] / 1e3, marker='o', label='Actual Textile Exports')
-plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Predicted_Textile_Exports_per_Capita'] / 1e3, marker='o', label='Potential Textile Exports (Normalized Indicators)')
-plt.title('Actual vs. Potential Textile Exports for Sri Lanka')
+plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Predicted_Textile_Exports_per_Capita'] / 1e3, marker='o', label='Potential Textile Exports (Linear Regression)')
+plt.title('Actual vs. Potential Textile Exports (Linear Regression) for Sri Lanka')
 plt.xlabel('Year')
 plt.ylabel('Textile Exports (US$ Million)')
 plt.legend()
@@ -940,14 +937,178 @@ plt.grid(True)
 plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
 plt.show()
 
+"""###2.3.3. Random Forest"""
+
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error
+
+X = df_comparators[independent_vars]
+y = df_comparators['Std_Textile_Exports_per_Capita']
+
+# Split the data
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+print(f"\nTraining set size: {X_train.shape[0]} samples")
+print(f"Testing set size: {X_test.shape[0]} samples")
+
+rf_regressor = RandomForestRegressor(
+    n_estimators=100,      # Number of trees in the forest
+    random_state=42,       # For reproducibility
+    n_jobs=-1              # Use all available cores
+)
+
+# Train the model
+rf_regressor.fit(X_train, y_train)
+
+# Make predictions on the test set
+y_pred_TX_rfr = rf_regressor.predict(X_test)
+
+# Calculate evaluation metrics
+mse = mean_squared_error(y_test, y_pred_TX_rfr)
+r2 = r2_score(y_test, y_pred_TX_rfr)
+
+print(f"\nModel Evaluation on Test Set:")
+print(f"Mean Squared Error (MSE): {mse:.4f}")
+print(f"R-squared (R²): {r2:.4f}")
+
+plt.figure(figsize=(8,6))
+sns.scatterplot(x=y_test, y=y_pred_TX_rfr)
+plt.plot([y.min(), y.max()], [y.min(), y.max()], 'r--')  # Diagonal line
+plt.xlabel('Actual Textile Exports')
+plt.ylabel('Predicted Actual Textile Exports')
+plt.title('Actual vs Predicted Textile Exports (Random Forest)')
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.gca().xaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
+# Prepare Sri Lanka's data for prediction
+X_sri_lanka_rfr = df_sri_lanka2[independent_vars]
+
+# Predict standardized textile exports
+predicted_TX_rfr = rf_regressor.predict(X_sri_lanka_rfr)
+
+# Convert predictions back to actual values
+df_sri_lanka2['Predicted_Textile_Exports_RF'] = (predicted_TX_rfr * stds['Textile_Exports_per_Capita'] + means['Textile_Exports_per_Capita']) * df_sri_lanka2['Population']
+
+plt.figure(figsize=(12, 6))
+
+plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Textile_Exports'] / 1e3, marker='o', label='Actual Textile Exports')
+plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Predicted_Textile_Exports_RF'] / 1e3, label='Potential Textile Exports (Random Forest)', marker='o')
+plt.xlabel('Year', fontsize=12)
+plt.ylabel('US$ Million', fontsize=12)
+plt.title('Actual vs. Potential Textile Exports (Random Forest) for Sri Lanka')
+plt.legend(fontsize=10)
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
+"""###2.3.4. Support Vector Regressor (SVR):
+Selected because it is said to be good for smaller datasets.
+"""
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVR
+
+X = df_comparators[independent_vars]
+y = df_comparators['Std_Textile_Exports_per_Capita']
+
+# Split the data into Training and Testing sets
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+print(f"\nTraining set size: {X_train.shape[0]} samples")
+print(f"Testing set size: {X_test.shape[0]} samples")
+
+svr_regressor = SVR(kernel='rbf', C=100, epsilon=0.1)
+
+# Train the model
+svr_regressor.fit(X_train, y_train)
+
+# Make predictions on the test set
+y_pred_TX_svr = svr_regressor.predict(X_test)
+
+# Calculate evaluation metrics
+mse = mean_squared_error(y_test, y_pred_TX_svr)
+r2 = r2_score(y_test, y_pred_TX_svr)
+
+print(f"\nModel Evaluation on Test Set:")
+print(f"Mean Squared Error (MSE): {mse:.4f}")
+print(f"R-squared (R²): {r2:.4f}")
+
+plt.figure(figsize=(8,6))
+sns.scatterplot(x=y_test, y=y_pred_TX_svr)
+plt.plot([y.min(), y.max()], [y.min(), y.max()], 'r--')  # Diagonal line
+plt.xlabel('Actual Textile Exports')
+plt.ylabel('Predicted Actual Textile Exports')
+plt.title('Actual vs Predicted Textile Exports (SVR)')
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.gca().xaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
+# Prepare Sri Lanka's data for prediction
+X_sri_lanka_svr = df_sri_lanka2[independent_vars]
+
+# Predict standardized textile exports
+predicted_TX_svr = svr_regressor.predict(X_sri_lanka_svr)
+
+# Convert predictions back to actual values
+df_sri_lanka2['Predicted_Textile_Exports_SVR'] = (predicted_TX_svr * stds['Textile_Exports_per_Capita'] + means['Textile_Exports_per_Capita']) * df_sri_lanka2['Population']
+
+plt.figure(figsize=(12, 6))
+
+plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Textile_Exports'] / 1e3, label='Actual Textile Exports', marker='o')
+plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Predicted_Textile_Exports_SVR'] / 1e3, label='Potential Textile Exports (SVR)', marker='o')
+plt.xlabel('Year', fontsize=12)
+plt.ylabel('US$ Million', fontsize=12)
+plt.title('Actual vs. Potential Textile Exports (SVR) for Sri Lanka')
+plt.legend(fontsize=10)
+plt.xticks(rotation=45)
+plt.tight_layout()  # Adjusts plot to ensure everything fits without overlap
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
 """##2.4. Comparison Between Textile Export Potential Predictions"""
 
 # Plot actual vs. Potential textile exports
 plt.figure(figsize=(12, 6))
 plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Textile_Exports'] / 1e3, marker='o', label='Actual Textile Exports')
-plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Predicted_Textile_Exports_per_Capita'] / 1e3, marker='o', label='Potential Textile Exports (Normalized Indicators)')
+plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Predicted_Textile_Exports_per_Capita'] / 1e3, marker='o', label='Potential Textile Exports (Linear Regression)')
+plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Predicted_Textile_Exports_RF'] / 1e3, marker='o', label='Potential Textile Exports (Random Forest)')
+plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Predicted_Textile_Exports_SVR'] / 1e3, marker='o', label='Potential Textile Exports (SVR)')
 plt.plot(df_sri_lanka1['Year'], df_sri_lanka1['Potential_Textile_Exports_per_Capita_Million'], marker='o', label='Potential Textile Exports (Calculated using \'Per Capita\' Annual average growth)')
 plt.plot(df_sri_lanka1['Year'], df_sri_lanka1['Potential_Textile_Exports_to_GDP_Million'], marker='o', label='Potential Textile Exports (Calculated using \'To GDP\' Annual average growth)')
+
+# # Plot Potential Textile Exports from Option 1
+# plt.plot(df_sri_lanka['Year'], df_sri_lanka['Potential_Textile_Exports_Million'], marker='o', label='Potential Exports (Approach 1)')
+
+# # Plot Forecasted Textile Exports from Option 2
+# plt.plot(df_sri_lanka['Year'], df_sri_lanka['Forecasted_Textile_Exports_Million'], marker='o', label='Forecasted Exports (Approach 2)')
+plt.title('Actual vs. Potential Textile Exports for Sri Lanka')
+plt.xlabel('Year')
+plt.ylabel('Textile Exports (US$ Million)')
+plt.legend()
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
+# Plot actual vs. Potential textile exports
+plt.figure(figsize=(12, 6))
+plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Textile_Exports'] / 1e3, marker='o', label='Actual Textile Exports')
+plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Predicted_Textile_Exports_per_Capita'] / 1e3, marker='o', label='Potential Textile Exports (Linear Regression)')
+plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Predicted_Textile_Exports_RF'] / 1e3, marker='o', label='Potential Textile Exports (Random Forest)')
+plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Predicted_Textile_Exports_SVR'] / 1e3, marker='o', label='Potential Textile Exports (SVR)')
+# plt.plot(df_sri_lanka1['Year'], df_sri_lanka1['Potential_Textile_Exports_per_Capita_Million'], marker='o', label='Potential Textile Exports (Calculated using \'Per Capita\' Annual average growth)')
+# plt.plot(df_sri_lanka1['Year'], df_sri_lanka1['Potential_Textile_Exports_to_GDP_Million'], marker='o', label='Potential Textile Exports (Calculated using \'To GDP\' Annual average growth)')
 
 # # Plot Potential Textile Exports from Option 1
 # plt.plot(df_sri_lanka['Year'], df_sri_lanka['Potential_Textile_Exports_Million'], marker='o', label='Potential Exports (Approach 1)')
@@ -1028,8 +1189,8 @@ df_sri_lanka2['Predicted_Reserves'] = (df_sri_lanka2['Std_Reserves_per_Capita'] 
 # Plot actual vs. predicted Reserves
 plt.figure(figsize=(12, 6))
 plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Reserves'] / 1e6, marker='o', label='Actual Reserves')
-plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Predicted_Reserves'] / 1e6, marker='o', label='Predicted Reserves')
-plt.title('Actual vs. Predicted Reserves for Sri Lanka (Normalized Indicators)')
+plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Predicted_Reserves'] / 1e6, marker='o', label='Predicted Potential Reserves')
+plt.title('Actual vs. Predicted Potential Reserves for Sri Lanka (Normalized Indicators)')
 plt.xlabel('Year')
 plt.ylabel('Textile Exports (US$ Million)')
 plt.legend()
@@ -1054,7 +1215,7 @@ plt.grid(True)
 plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
 plt.show()
 
-"""##3.2. Using SL indicators"""
+"""##3.2. Using SL indicators - Linear Regression"""
 
 # Select standardized independent variables
 independent_vars = ['Textile_Export_Growth','Textile_Exports'] #Best
@@ -1087,9 +1248,13 @@ df_results['Predicted_Potential_Reserves_Using_Normalized_Compatitor_Indicators(
 
 df_results.head()
 
-df_results.to_excel('/content/drive/MyDrive/RSU50 DataFiles/Predictions.xlsx', index=False)
+# df_results.to_excel('/content/drive/MyDrive/RSU50 DataFiles/Predictions.xlsx', index=False)
 
 df_sri_lanka3['Textile_Exports'] = df_sri_lanka3['Predicted_Textile_Exports_per_Capita'].values
+
+df_sri_lanka3['Textile_Export_Growth'] = df_sri_lanka3['Textile_Exports'].pct_change() * 100
+
+df_sri_lanka3['Textile_Export_Growth'].bfill(inplace=True)
 
 # Prepare Sri Lanka's data for prediction
 X_sri_lanka = df_sri_lanka3[independent_vars]
@@ -1101,11 +1266,9 @@ df_sri_lanka3['Predicted_Reserves'] = model.predict(X_sri_lanka)
 # Plot actual vs. predicted Reserves
 plt.figure(figsize=(12, 6))
 plt.plot(df_sri_lanka3['Year'], df_sri_lanka3['Reserves'] / 1e6, marker='o', label='Actual Reserves')
-plt.plot(df_sri_lanka3['Year'], df_sri_lanka3['Predicted_Reserves'] / 1e6, marker='o', label='Predicted Reserves')
+plt.plot(df_sri_lanka3['Year'], df_sri_lanka3['Predicted_Reserves'] / 1e6, marker='o', label='Predicted Potential Reserves (Linear Regression)')
 # plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Predicted_Reserves'] / 1e6, marker='o', label='Predicted Reserves 1')
-plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Textile_Exports'] / 1e3, marker='o', label='Actual Textile Exports')
-plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Predicted_Textile_Exports_per_Capita'] / 1e3, marker='o', label='Potential Textile Exports (Normalized Indicators)')
-plt.title('Actual vs. Predicted Reserves for Sri Lanka (Normalized Indicators)')
+plt.title('Actual vs. Predicted Potential Reserves (Linear Regression) for Sri Lanka')
 plt.xlabel('Year')
 plt.ylabel('Textile Exports (US$ Million)')
 plt.legend()
@@ -1113,84 +1276,747 @@ plt.grid(True)
 plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
 plt.show()
 
-"""##3.3. Using SL indicators 2"""
+# Plot actual vs. predicted Reserves
+plt.figure(figsize=(12, 6))
+plt.plot(df_sri_lanka3['Year'], df_sri_lanka3['Reserves'] / 1e6, marker='o', label='Actual Reserves')
+plt.plot(df_sri_lanka3['Year'], df_sri_lanka3['Predicted_Reserves'] / 1e6, marker='o', label='Predicted Potential Reserves (Linear Regression)')
+# plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Predicted_Reserves'] / 1e6, marker='o', label='Predicted Reserves 1')
+plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Textile_Exports'] / 1e3, marker='o', label='Actual Textile Exports')
+plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Predicted_Textile_Exports_per_Capita'] / 1e3, marker='o', label='Potential Textile Exports')
+plt.title('Actual vs. Predicted Potential Reserves and Textile Exports for Sri Lanka')
+plt.xlabel('Year')
+plt.ylabel('Textile Exports (US$ Million)')
+plt.legend()
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
 
-df_sri_lanka4 = df_sri_lanka2.copy()
+"""##3.3. Using SL indicators - Random Forest"""
 
-# df_sri_lanka4['Log_Textile_Exports'] = np.log(df_sri_lanka4['Textile_Exports'])
-# df_sri_lanka4['Log_GDP'] = np.log(df_sri_lanka4['GDP'])
-# df_sri_lanka4['Log_Population'] = np.log(df_sri_lanka4['Population'])
-# y_log = np.log(y)
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error
 
-# Update independent variables to include log-transformed variables
-# independent_vars_log = ['Log_Textile_Exports', 'Log_GDP']#, 'Log_PopulationLog_GDP']
-independent_vars_log = ['Textile_Exports']#, 'GDP']#, 'Population_Density']#, 'Log_PopulationLog_GDP']
+df_sri_lanka_potential_rfr = df_sri_lanka3[['Year']].copy()
+df_sri_lanka_potential_rfr['Predicted_Reserves'] = (df_sri_lanka3['Predicted_Reserves']/1e6).copy()
+df_sri_lanka_potential_rfr['Actual_Textile_Export_Growth'] = df_sri_lanka3['Textile_Export_Growth'].copy()
+df_sri_lanka_potential_rfr['Actual_Reserves'] = (df_sri_lanka3['Reserves']/1e6).copy()
+df_sri_lanka_potential_rfr['Predicted_Textile_Exports'] = (df_sri_lanka3['Predicted_Textile_Exports_per_Capita']/1e3).copy()
+df_sri_lanka_potential_rfr['Actual_Textile_Exports'] = (df_sri_lanka2['Textile_Exports']/1e3).copy()
 
-# Define X and y
-X_log = df_sri_lanka4[independent_vars_log]
-y_log = np.log(df_sri_lanka4['Reserves'])
+df_sri_lanka_potential_rfr['Predicted_Textile_Export_Growth'] = df_sri_lanka_potential_rfr['Predicted_Textile_Exports'].pct_change() * 100
 
-# X['Log_Textile_Exports'] = np.log(X['Textile_Exports'])
-# X['Log_GDP'] = np.log(X['GDP'])
-# X['Log_Population'] = np.log(X['Population'])
-# y_log = np.log(y)
+df_sri_lanka_potential_rfr['Predicted_Textile_Export_Growth'].bfill(inplace=True)
 
-# # Update independent variables to include log-transformed variables
-# independent_vars_log = ['Log_Textile_Exports', 'Log_GDP', 'Log_Population']
-# X_log = X[independent_vars_log]
+# Define features and target
+training_features = ['Actual_Textile_Exports', 'Actual_Textile_Export_Growth']
+# training_features = ['Actual_Textile_Exports']
+target_variable = 'Actual_Reserves'
+
+X = df_sri_lanka_potential_rfr[training_features]
+y = df_sri_lanka_potential_rfr[target_variable]
+
+# Split the data
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+print(f"\nTraining set size: {X_train.shape[0]} samples")
+print(f"Testing set size: {X_test.shape[0]} samples")
+
+rf_regressor = RandomForestRegressor(
+    n_estimators=100,      # Number of trees in the forest
+    random_state=42,       # For reproducibility
+    n_jobs=-1              # Use all available cores
+)
+
+# Train the model
+rf_regressor.fit(X_train, y_train)
+
+# Make predictions on the test set
+y_pred_rfr = rf_regressor.predict(X_test)
+
+# Calculate evaluation metrics
+mse = mean_squared_error(y_test, y_pred_rfr)
+r2 = r2_score(y_test, y_pred_rfr)
+
+print(f"\nModel Evaluation on Test Set:")
+print(f"Mean Squared Error (MSE): {mse:.4f}")
+print(f"R-squared (R²): {r2:.4f}")
+
+plt.figure(figsize=(8,6))
+sns.scatterplot(x=y_test, y=y_pred_rfr)
+plt.plot([y.min(), y.max()], [y.min(), y.max()], 'r--')  # Diagonal line
+plt.xlabel('Actual Reserves')
+plt.ylabel('Predicted Actual Reserves')
+plt.title('Actual vs Predicted Reserves')
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.gca().xaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
+prediction_features = ['Predicted_Textile_Exports', 'Predicted_Textile_Export_Growth']
+# prediction_features = ['Predicted_Textile_Exports']
+
+X_new= pd.DataFrame()
+# Prepare the input data for prediction
+X_new[training_features] = df_sri_lanka_potential_rfr[prediction_features]
+
+predicted_reserves = rf_regressor.predict(X_new)
+
+df_sri_lanka_potential_rfr['Predicted_Reserves_RF'] = predicted_reserves
+
+# Ensure that the index is a DatetimeIndex
+if not isinstance(df_sri_lanka_potential_rfr.index, pd.DatetimeIndex):
+    df_sri_lanka_potential_rfr.index = pd.to_datetime(df_sri_lanka_potential_rfr.index)
+
+# Sort the DataFrame by Date
+df_sri_lanka_potential_rfr.sort_index(inplace=True)
+
+plt.figure(figsize=(12, 6))
+
+plt.plot(df_sri_lanka_potential_rfr['Year'], df_sri_lanka_potential_rfr['Actual_Reserves'], label='Actual Reserves', marker='o')
+plt.plot(df_sri_lanka_potential_rfr['Year'], df_sri_lanka_potential_rfr['Predicted_Reserves_RF'], label='Predicted Potential Reserves (Random Forest)', marker='o')
+plt.xlabel('Year', fontsize=12)
+plt.ylabel('US$ Million', fontsize=12)
+plt.title('Actual and Predicted Potential Reserves (Random Forest)', fontsize=16)
+plt.legend(fontsize=10)
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
+plt.figure(figsize=(12, 6))
+
+plt.plot(df_sri_lanka_potential_rfr['Year'], df_sri_lanka_potential_rfr['Actual_Reserves'], label='Actual Reserves', marker='o')
+plt.plot(df_sri_lanka_potential_rfr['Year'], df_sri_lanka_potential_rfr['Predicted_Reserves_RF'], label='Predicted Reserves (Random Forest)', marker='o')
+plt.plot(df_sri_lanka_potential_rfr['Year'], df_sri_lanka_potential_rfr['Actual_Textile_Exports'], label='Actual Textile Exports', marker='o')
+plt.plot(df_sri_lanka_potential_rfr['Year'], df_sri_lanka_potential_rfr['Predicted_Textile_Exports'], label='Predicted Textile Exports', marker='o')
+plt.xlabel('Year', fontsize=12)
+plt.ylabel('US$ Million', fontsize=12)
+plt.title('Actual and Predicted Potential Reserves (Random Forest) & Textile Exports Over Time', fontsize=16)
+plt.legend(fontsize=10)
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
+"""##3.4. Using SL indicators - Support Vector Regressor (SVR):
+Selected because it is said to be good for smaller datasets.
+"""
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVR
+
+df_sri_lanka_potential_svr = df_sri_lanka_potential_rfr.copy()
+
+training_features = ['Actual_Textile_Exports', 'Actual_Textile_Export_Growth']
+target_variable = 'Actual_Reserves'
+
+X = df_sri_lanka_potential_svr[training_features]
+y = df_sri_lanka_potential_svr[target_variable]
+
+# Split the data into Training and Testing sets
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+print(f"\nTraining set size: {X_train.shape[0]} samples")
+print(f"Testing set size: {X_test.shape[0]} samples")
+
+svr_regressor = SVR(kernel='rbf', C=100, epsilon=0.1)
+
+# Train the model
+svr_regressor.fit(X_train, y_train)
+
+# Make predictions on the test set
+y_pred_svr = svr_regressor.predict(X_test)
+
+# Calculate evaluation metrics
+mse = mean_squared_error(y_test, y_pred_svr)
+r2 = r2_score(y_test, y_pred_svr)
+
+print(f"\nModel Evaluation on Test Set:")
+print(f"Mean Squared Error (MSE): {mse:.4f}")
+print(f"R-squared (R²): {r2:.4f}")
+
+prediction_features = ['Predicted_Textile_Exports', 'Predicted_Textile_Export_Growth']
+
+# Prepare the input data for prediction
+X_new = df_sri_lanka_potential_svr[prediction_features]
+
+# Rename the predicted features to match the actual feature names used during training
+X_new.rename(columns={
+    'Predicted_Textile_Exports': 'Actual_Textile_Exports',
+    'Predicted_Textile_Export_Growth': 'Actual_Textile_Export_Growth'
+}, inplace=True)
 
 
-# Initialize the regression model
-model = LinearRegression()
+# Predict using the trained SVR model
+predicted_reserves_svr = svr_regressor.predict(X_new)
 
-# Perform cross-validation
+# Add the predictions to the dataframe (optional)
+df_sri_lanka_potential_svr['Predicted_Reserves_SVR'] = predicted_reserves_svr
+
+# print("\nPredicted Reserves based on Predicted_* features using SVR:")
+# print(df_sri_lanka_potential_svr[['Predicted_Reserves', 'Predicted_Reserves_SVR']])
+
+plt.figure(figsize=(12, 6))
+
+plt.plot(df_sri_lanka3['Year'], df_sri_lanka_potential_svr['Actual_Reserves'], label='Actual Reserves', marker='o')
+plt.plot(df_sri_lanka3['Year'], df_sri_lanka_potential_svr['Predicted_Reserves_SVR'], label='Predicted Potential Reserves (SVR)', marker='o')
+
+# Enhancements
+plt.xlabel('Year', fontsize=12)
+plt.ylabel('US$ Million', fontsize=12)
+plt.title('Actual and Predicted Potential Reserves (SVR)', fontsize=16)
+plt.legend(fontsize=10)
+plt.xticks(rotation=45)
+plt.tight_layout()  
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
+plt.figure(figsize=(12, 6))
+
+plt.plot(df_sri_lanka3['Year'], df_sri_lanka_potential_svr['Actual_Reserves'], label='Actual Reserves', marker='o')
+plt.plot(df_sri_lanka3['Year'], df_sri_lanka_potential_svr['Predicted_Reserves_SVR'], label='Predicted Potential Reserves (SVR)', marker='o')
+plt.plot(df_sri_lanka3['Year'], df_sri_lanka_potential_svr['Actual_Textile_Exports'], label='Actual Textile Exports', marker='o')
+plt.plot(df_sri_lanka3['Year'], df_sri_lanka_potential_svr['Predicted_Textile_Exports'], label='Predicted Textile Exports', marker='o')
+
+# Enhancements
+plt.xlabel('Year', fontsize=12)
+plt.ylabel('US$ Million', fontsize=12)
+plt.title('Actual and Predicted Potential Reserves (SVR) & Textile Exports Over Time', fontsize=16)
+plt.legend(fontsize=10)
+plt.xticks(rotation=45)
+plt.tight_layout()  
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
+"""##3.5. Comparison of the predicted reserves"""
+
+plt.figure(figsize=(12, 6))
+
+plt.plot(df_sri_lanka3['Year'], df_sri_lanka_potential_svr['Actual_Reserves'], label='Actual Reserves', marker='o')
+plt.plot(df_sri_lanka3['Year'], df_sri_lanka_potential_svr['Predicted_Reserves'], label='Predicted Potential Reserves (Linear Regression)', marker='o')
+plt.plot(df_sri_lanka3['Year'], df_sri_lanka_potential_svr['Predicted_Reserves_RF'], label='Predicted Potential Reserves (Random Forest)', marker='o')
+plt.plot(df_sri_lanka3['Year'], df_sri_lanka_potential_svr['Predicted_Reserves_SVR'], label='Predicted Potential Reserves (SVR)', marker='o')
+
+# Enhancements
+plt.xlabel('Year', fontsize=12)
+plt.ylabel('US$ Million', fontsize=12)
+plt.title('Actual and All the Predicted Potential Reserves', fontsize=16)
+plt.legend(fontsize=10)
+plt.xticks(rotation=45)
+plt.tight_layout() 
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
+"""#4. Time Series
+
+##4.1. statsmodels - ARIMA - Textile Exports
+"""
+
+df_sri_lanka_potential_TS = df_sri_lanka3.copy()
+# df_sri_lanka_potential_TS.info()
+
+df_sri_lanka_potential_TS = df_sri_lanka3[['Year','Textile_Exports','Reserves','Predicted_Textile_Exports_per_Capita','Predicted_Reserves']].copy()
+
+# Convert 'Year' to datetime and set as index
+df_sri_lanka_potential_TS['Year'] = pd.to_datetime(df_sri_lanka_potential_TS['Year'], format='%Y')
+df_sri_lanka_potential_TS.set_index('Year', inplace=True)
+
+# Extract the time series data
+textile_exports_ts = df_sri_lanka_potential_TS['Predicted_Textile_Exports_per_Capita']/ 1e3
+reserves_ts = df_sri_lanka_potential_TS['Predicted_Reserves']/ 1e6
+
+plt.figure(figsize=(12, 6))
+plt.plot(textile_exports_ts, label='Potential Textile Exports')
+plt.title('Potential Textile Exports Time Series')
+plt.xlabel('Year')
+plt.ylabel('US$ Million')
+plt.legend()
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
+def adf_test(timeseries):
+    result = adfuller(timeseries.dropna())
+    print('ADF Statistic: %f' % result[0])
+    print('p-value: %f' % result[1])
+    for key, value in result[4].items():
+        print('Critical Value (%s): %.3f' % (key, value))
+    if result[1] <= 0.05:
+        print("The time series is stationary.")
+    else:
+        print("The time series is non-stationary.")
+
+# Apply ADF test
+adf_test(textile_exports_ts)
+
+"""the series is non-stationary, so difference it."""
+
+# First-order differencing
+textile_exports_ts_diff = textile_exports_ts.diff().dropna()
+adf_test(textile_exports_ts_diff)
+
+# First-order differencing
+textile_exports_ts_diff2 = textile_exports_ts_diff.diff().dropna()
+adf_test(textile_exports_ts_diff2)
+
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+
+plt.figure(figsize=(12,6))
+plt.subplot(121)
+plot_acf(textile_exports_ts_diff2, ax=plt.gca(), lags=20)
+plt.subplot(122)
+plot_pacf(textile_exports_ts_diff2, ax=plt.gca(), lags=10)
+plt.show()
+
+# Assuming p=1, d=1 (since we differenced twice), q=1
+model_textile_exports = ARIMA(textile_exports_ts, order=(1,2,1))
+model_textile_exports_fit = model_textile_exports.fit()
+print(model_textile_exports_fit.summary())
+
+# Forecasting the next 10 years
+forecast_steps = 10
+forecast_textile_exports = model_textile_exports_fit.forecast(steps=forecast_steps)
+
+# Create a new date index for future dates
+last_year = textile_exports_ts.index[-1].year
+future_years = pd.date_range(start=f'{last_year+1}', periods=forecast_steps, freq='Y')
+
+# Combine historical and forecasted data
+forecast_textile_exports.index = future_years
+
+# Plot the forecast
+plt.figure(figsize=(12,6))
+plt.plot(textile_exports_ts, label='Historical Potential Textile Exports')
+plt.plot(forecast_textile_exports, label='Forecasted Potential Textile Exports', linestyle='--')
+plt.title('Forecasted Potential Textile Exports')
+plt.xlabel('Year')
+plt.ylabel('US$ Million')
+plt.legend()
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
+# Assuming p=1, d=1 (since we differenced twice), q=1
+model_resrves = ARIMA(reserves_ts, order=(1,2,1))
+model_resrves_fit = model_resrves.fit()
+print(model_resrves_fit.summary())
+
+forecast_resrves = model_resrves_fit.forecast(steps=forecast_steps)
+
+# Create a new date index for future dates
+last_year = reserves_ts.index[-1].year
+future_years = pd.date_range(start=f'{last_year+1}', periods=forecast_steps, freq='Y')
+
+# Combine historical and forecasted data
+forecast_resrves.index = future_years
+
+# Plot the forecast
+plt.figure(figsize=(12,6))
+plt.plot(reserves_ts, label='Historical Potential Reserves')
+plt.plot(forecast_resrves, label='Forecasted Potential Reserves', linestyle='--')
+plt.title('Forecasted Potential Reserves')
+plt.xlabel('Year')
+plt.ylabel('US$ Million')
+plt.legend()
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
+# Plot the forecast
+plt.figure(figsize=(12,6))
+plt.plot(reserves_ts, label='Historical Potential Reserves')
+plt.plot(forecast_resrves, label='Forecasted Potential Reserves', linestyle='--')
+plt.plot(textile_exports_ts, label='Historical Potential Textile Exports')
+plt.plot(forecast_textile_exports, label='Forecasted Potential Textile Exports', linestyle='--')
+plt.title('Forecasted Potential Textile Exports and Reserves (ARIMA)')
+plt.xlabel('Year')
+plt.ylabel('US$ Million')
+plt.legend()
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
+"""##4.2. Using pmdarima for Auto ARIMA"""
+
+#install pmdarima
+!pip install pmdarima
+
+import pmdarima as pm
+
+# For potential textile exports
+model_textile_exports_auto = pm.auto_arima(textile_exports_ts, seasonal=False, stepwise=True, suppress_warnings=True)
+print(model_textile_exports_auto.summary())
+
+# Forecast
+forecast_textile_exports_auto = model_textile_exports_auto.predict(n_periods=forecast_steps)
+# forecast_textile_exports_auto = pd.Series(forecast_textile_exports_auto, index=future_years)
+
+# For potential reserves
+model_reserves_auto = pm.auto_arima(reserves_ts, seasonal=False, stepwise=True, suppress_warnings=True)
+print(model_reserves_auto.summary())
+
+# Forecast
+forecast_reserves_auto = model_reserves_auto.predict(n_periods=forecast_steps)
+# forecast_reserves_auto = pd.Series(forecast_reserves_auto, index=future_years)
+
+# Plot the forecast
+plt.figure(figsize=(12,6))
+plt.plot(textile_exports_ts, label='Historical Potential Textile Exports')
+plt.plot(forecast_textile_exports_auto, label='Forecasted Potential Textile Exports', linestyle='--')
+plt.title('Forecasted Potential Textile Exports')
+plt.xlabel('Year')
+plt.ylabel('US$ Million')
+plt.legend()
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
+# Plot the forecast
+plt.figure(figsize=(12,6))
+plt.plot(reserves_ts, label='Historical Potential Reserves')
+plt.plot(forecast_reserves_auto, label='Forecasted Potential Reserves', linestyle='--')
+plt.title('Forecasted Potential Reserves')
+plt.xlabel('Year')
+plt.ylabel('US$ Million')
+plt.legend()
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
+"""##4.3. Using Prophet"""
+
+from prophet import Prophet
+
+"""###4.3.1. Predict future using actual past"""
+
+# For actual textile exports
+df_exports_actual = df_sri_lanka2.reset_index()[['Year', 'Textile_Exports']]
+df_exports_actual.columns = ['ds', 'y']
+
+df_exports_actual['y'] = df_exports_actual['y'] / 1e3
+
+# Convert 'Year' to datetime
+df_exports_actual['ds'] = pd.to_datetime(df_exports_actual['ds'], format='%Y')
+
+model_exports_actual = Prophet()
+model_exports_actual.fit(df_exports_actual)
+
+future_exports_actual = model_exports_actual.make_future_dataframe(periods=forecast_steps, freq='Y')
+forecast_exports_actual = model_exports_actual.predict(future_exports_actual)
+
+# Plot forecast
+model_exports_actual.plot(forecast_exports_actual)
+plt.title('Forecasted Actual Textile Exports using Prophet')
+plt.xlabel('Year')
+plt.ylabel('US$ Million')
+plt.legend()
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
+# For potential reserves
+df_reserves_actual = df_sri_lanka2.reset_index()[['Year', 'Reserves']]
+df_reserves_actual.columns = ['ds', 'y']
+
+df_reserves_actual['y'] = df_reserves_actual['y'] / 1e6
+
+# Convert 'Year' to datetime
+df_reserves_actual['ds'] = pd.to_datetime(df_reserves_actual['ds'], format='%Y')
+
+model_reserves_actual = Prophet()
+model_reserves_actual.fit(df_reserves_actual)
+
+future_reserves_actual = model_reserves_actual.make_future_dataframe(periods=forecast_steps, freq='Y')
+forecast_reserves_actual = model_reserves_actual.predict(future_reserves_actual)
+
+# Plot forecast
+model_reserves_actual.plot(forecast_reserves_actual)
+plt.title('Forecasted Actual Reserves using Prophet')
+plt.xlabel('Year')
+plt.ylabel('US$ Million')
+plt.legend()
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
+"""###4.3.2. Predict future using predicted past potential"""
+
+# For potential textile exports
+df_exports_past_potential = df_sri_lanka3.reset_index()[['Year', 'Predicted_Textile_Exports_per_Capita']]
+df_exports_past_potential.columns = ['ds', 'y']
+
+df_exports_past_potential['y'] = df_exports_past_potential['y'] / 1e3
+
+# Convert 'Year' to datetime
+df_exports_past_potential['ds'] = pd.to_datetime(df_exports_past_potential['ds'], format='%Y')
+
+model_exports_past_potential = Prophet()
+model_exports_past_potential.fit(df_exports_past_potential)
+
+future_exports_past_potential = model_exports_past_potential.make_future_dataframe(periods=forecast_steps, freq='Y')
+forecast_exports_past_potential = model_exports_past_potential.predict(future_exports_past_potential)
+
+# Plot forecast
+model_exports_past_potential.plot(forecast_exports_past_potential)
+plt.title('Forecasted Potential Textile Exports using Prophet')
+plt.xlabel('Year')
+plt.ylabel('US$ Million')
+plt.legend()
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
+# For potential reserves
+df_reserves_past_potential = df_sri_lanka3.reset_index()[['Year', 'Predicted_Reserves']]
+df_reserves_past_potential.columns = ['ds', 'y']
+
+df_reserves_past_potential['y'] = df_reserves_past_potential['y'] / 1e6
+
+# Convert 'Year' to datetime
+df_reserves_past_potential['ds'] = pd.to_datetime(df_reserves_past_potential['ds'], format='%Y')
+
+model_reserves_past_potential = Prophet()
+model_reserves_past_potential.fit(df_reserves_past_potential)
+
+future_reserves_past_potential = model_reserves_past_potential.make_future_dataframe(periods=forecast_steps, freq='Y')
+forecast_reserves_past_potential = model_reserves_past_potential.predict(future_reserves_past_potential)
+
+# Plot forecast
+model_reserves_past_potential.plot(forecast_reserves_past_potential)
+plt.title('Forecasted Potential Reserves using Prophet')
+plt.xlabel('Year')
+plt.ylabel('US$ Million')
+plt.legend()
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
+# Plot
+plt.figure(figsize=(12, 6))
+
+# Plot Potential Textile Exports
+plt.plot(forecast_exports_past_potential['ds'], forecast_exports_past_potential['yhat'], label='Potential Textile Exports Forecast', color='blue', linestyle='dashed')
+plt.fill_between(forecast_exports_past_potential['ds'], forecast_exports_past_potential['yhat_lower'], forecast_exports_past_potential['yhat_upper'], color='blue', alpha=0.2)
+
+# Plot Potential Reserves
+plt.plot(forecast_reserves_past_potential['ds'], forecast_reserves_past_potential['yhat'], label='Potential Reserves Forecast', color='green', linestyle='dashed')
+plt.fill_between(forecast_reserves_past_potential['ds'], forecast_reserves_past_potential['yhat_lower'], forecast_reserves_past_potential['yhat_upper'], color='green', alpha=0.2)
+
+# Plot historical data for reference
+plt.plot(df_exports_past_potential['ds'], df_exports_past_potential['y'], label='Past Potential - Textile Exports', color='blue')
+plt.plot(df_reserves_past_potential['ds'], df_reserves_past_potential['y'], label='Past Potential - Reserves', color='green')
+
+# Customizing the plot
+plt.title('Forecasted Potential Textile Exports and Reserves (Prophet)')
+plt.xlabel('Year')
+plt.ylabel('US$ Million')
+plt.legend()
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
+# Plot settings
+plt.figure(figsize=(14, 8))
+
+# Plot Potential Textile Exports
+plt.plot(forecast_exports_actual['ds'], forecast_exports_actual['yhat'], label='Potential Textile Exports Forecast', color='blue', linestyle='dashed')
+plt.fill_between(forecast_exports_actual['ds'], forecast_exports_actual['yhat_lower'], forecast_exports_actual['yhat_upper'], color='blue', alpha=0.2)
+
+# Plot Potential Reserves
+plt.plot(forecast_reserves_actual['ds'], forecast_reserves_actual['yhat'], label='Potential Reserves Forecast', color='green', linestyle='dashed')
+plt.fill_between(forecast_reserves_actual['ds'], forecast_reserves_actual['yhat_lower'], forecast_reserves_actual['yhat_upper'], color='green', alpha=0.2)
+
+# Plot historical data for reference
+plt.plot(df_exports_actual['ds'], df_exports_actual['y'], label='Actual - Textile Exports', color='blue')
+plt.plot(df_reserves_actual['ds'], df_reserves_actual['y'], label='Actual - Reserves', color='green')
+
+# Customizing the plot
+plt.title('Prophet Forecasted Actual Textile Exports and Actual Reserves for Sri Lanka')
+plt.xlabel('Year')
+plt.ylabel('US$ Million')
+plt.legend()
+plt.grid(True)
+plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+plt.show()
+
+"""#5. Analysis using pyts"""
+
+!pip install --upgrade pyts
+
+import pyts
+print(f"pyts version: {pyts.__version__}")
+
+from pyts.approximation import PiecewiseAggregateApproximation
+from pyts.approximation import SymbolicAggregateApproximation
+from pyts.metrics import dtw
+# from pyts.shapelets import ShapeletModel
+
+df_sri_lanka_potential_pyts = df_sri_lanka3[['Year','Predicted_Reserves','Textile_Export_Growth']].copy()
+# For actual textile exports
+df_sri_lanka_potential_pyts['Actual_Reserves'] = df_sri_lanka3['Reserves'].copy()
+df_sri_lanka_potential_pyts['Predicted_Textile_Exports'] = df_sri_lanka3['Predicted_Textile_Exports_per_Capita'].copy()
+df_sri_lanka_potential_pyts['Actual_Textile_Exports'] = df_sri_lanka2['Textile_Exports'].copy()
+
+# Convert 'Year' to datetime and set as index
+df_sri_lanka_potential_pyts['Year'] = pd.to_datetime(df_sri_lanka_potential_pyts['Year'], format='%Y')
+df_sri_lanka_potential_pyts.set_index('Year', inplace=True)
+
+df_sri_lanka_potential_pyts.info()
+
+# # Extract the time series data
+# textile_exports_paa = df_sri_lanka_potential_pyts['Predicted_Textile_Exports_per_Capita']/ 1e3
+# reserves_paa = df_sri_lanka_potential_pyts['Predicted_Reserves']/ 1e6
+
+# # Instantiate PAA with desired number of segments
+# paa = PiecewiseAggregateApproximation(window_size=2)
+
+# # Apply PAA to Potential Textile Exports
+# textile_exports_paa = paa.transform(textile_exports_paa.values.reshape(1, -1))
+# reserves_paa = paa.transform(reserves_paa.values.reshape(1, -1))
+
+# Instantiate PAA with desired number of segments
+paa = PiecewiseAggregateApproximation(window_size=5, output_size=None, overlapping=True)
+
+# Apply PAA to Potential Textile Exports
+textile_exports_actual_paa = paa.fit_transform((df_sri_lanka_potential_pyts['Actual_Textile_Exports'].values/ 1e3).reshape(1, -1))
+textile_exports_potential_paa = paa.fit_transform((df_sri_lanka_potential_pyts['Predicted_Textile_Exports'].values/ 1e3).reshape(1, -1))
+
+print("PAA Transformed Actual Textile Exports:")
+print(textile_exports_actual_paa)
+
+print("PAA Transformed Potential Textile Exports:")
+print(textile_exports_potential_paa)
+
+# Instantiate SAX with desired parameters
+sax = SymbolicAggregateApproximation(n_bins=3, strategy='quantile', raise_warning=True, alphabet=None)
+
+# Apply SAX to Potential Textile Exports
+textile_exports_actual_sax = sax.fit_transform((df_sri_lanka_potential_pyts['Actual_Textile_Exports'].values/ 1e3).reshape(1, -1))
+textile_exports_potential_sax = sax.fit_transform((df_sri_lanka_potential_pyts['Predicted_Textile_Exports'].values/ 1e3).reshape(1, -1))
+
+print("SAX Transformed Actual Textile Exports:")
+print(textile_exports_actual_sax)
+
+print("SAX Transformed Potential Textile Exports:")
+print(textile_exports_potential_sax)
+
+from pyts.transformation import ShapeletTransform
+
+# Define sliding window parameters
+window_size = 5
+stride = 1
+
+# Function to create sliding windows
+def create_sliding_windows(data, target_data, window_size, stride=1):
+    # n_windows = (len(data) - window_size) // stride + 1
+    # windows = np.array([data[i*stride : i*stride + window_size] for i in range(n_windows)])
+    # return windows
+    n_windows = (len(data) - window_size) // stride
+    windows = np.array([data[i*stride : i*stride + window_size] for i in range(n_windows)])
+    targets = np.array([target_data[i*stride + window_size] for i in range(n_windows)])
+    return windows, targets
+
+# # Function to create sliding windows
+# def create_sliding_windows(data, window_size, stride=1):
+#     n_windows = (len(data) - window_size) // stride + 1
+#     windows = np.array([data[i*stride : i*stride + window_size] for i in range(n_windows)])
+#     return windows
+
+# Create sliding windows and targets for Actual Textile Exports
+textile_windows_actual, y_reserves_actual = create_sliding_windows(
+    df_sri_lanka_potential_pyts['Actual_Textile_Exports'].values/ 1e3,
+    df_sri_lanka_potential_pyts['Actual_Reserves'].values/ 1e6,
+    window_size,
+    stride
+)
+
+# Create sliding windows and targets for Potential Textile Exports
+textile_windows_potential, y_reserves_potential = create_sliding_windows(
+    df_sri_lanka_potential_pyts['Predicted_Textile_Exports'].values/ 1e3,
+    df_sri_lanka_potential_pyts['Predicted_Reserves'].values/ 1e6,
+    window_size,
+    stride
+)
+
+print("Textile Windows Actual Shape:", textile_windows_actual.shape)
+print("Target Variable Actual Shape:", y_reserves_actual.shape)
+
+print("Textile Windows Potential Shape:", textile_windows_potential.shape)
+print("Target Variable Potential Shape:", y_reserves_potential.shape)
+
+textile_windows_actual
+
+textile_windows_potential
+
+y_reserves_actual
+
+y_reserves_potential
+
+# Initialize ShapeletTransform
+shapelet_transform = ShapeletTransform(
+    n_shapelets=3,               # Number of shapelets to extract
+    criterion='anova',           # Use 'anova' for regression
+    window_sizes='auto',         # Automatically determine window sizes
+    window_steps=None,           # Default step size
+    remove_similar=True,         # Remove similar shapelets
+    sort=False,                  # Do not sort shapelets by score
+    verbose=0,                   # No verbosity
+    random_state=42,             # For reproducibility
+    n_jobs=-1                    # Utilize all available CPU cores
+)
+
+# Fit the ShapeletTransform and transform the data
+X_shapelet_actual = shapelet_transform.fit_transform(textile_windows_actual, y_reserves_actual)
+X_shapelet_potential = shapelet_transform.fit_transform(textile_windows_potential, y_reserves_actual)
+
+print("Shapelet Features Shape:", X_shapelet_actual.shape)
+print("Shapelet Features:")
+print(X_shapelet_actual)
+
+print("Shapelet Features Shape:", X_shapelet_potential.shape)
+print("Shapelet Features:")
+print(X_shapelet_potential)
+
+# Initialize and evaluate the regression model
+regressor_potential = LinearRegression()
+regressor_actual = LinearRegression()
 kf = KFold(n_splits=5, shuffle=True, random_state=42)
-cv_scores = cross_val_score(model, X_log, y_log, cv=kf, scoring='r2')
+cv_scores = cross_val_score(regressor_potential, X_shapelet_potential, y_reserves_potential, cv=kf, scoring='r2')
 
-print(f'Cross-validated R-squared scores: {cv_scores}')
+print(f'Cross-validated R-squared scores with Shapelet Features: {cv_scores}')
 print(f'Average R-squared: {np.mean(cv_scores):.4f}')
 
-# Fit the model on the entire dataset
-model.fit(X_log, y_log)
+# Fit the model on the entire dataset using Shapelet features
+regressor_potential.fit(X_shapelet_potential, y_reserves_potential)
+regressor_actual.fit(X_shapelet_actual, y_reserves_actual)
 
-# Print model coefficients
-coefficients = pd.Series(model.coef_, index=independent_vars_log)
-print("Model Coefficients:")
-print(coefficients)
-print(f"Intercept: {model.intercept_:.6f}")
+# Predict reserves using the fitted model
+y_pred_potential = regressor_potential.predict(X_shapelet_potential)
+y_pred_actual = regressor_actual.predict(X_shapelet_actual)
 
-# Create a new DataFrame for prediction
-df_sri_lanka_potential = df_sri_lanka4.copy()
+# Extract the years corresponding to y_reserves
+years = df_sri_lanka_potential_rfr['Year'].values[window_size:]
 
-# Replace actual textile exports with potential textile exports
-df_sri_lanka_potential['Textile_Exports'] = df_sri_lanka_potential['Predicted_Textile_Exports_per_Capita']
-
-# Recalculate the log-transformed variables
-# df_sri_lanka_potential['Log_Textile_Exports'] = np.log(df_sri_lanka_potential['Textile_Exports'])
-
-# Prepare X for prediction
-X_potential = df_sri_lanka_potential[independent_vars_log]
-
-# Predict log-transformed reserves
-df_sri_lanka_potential['Predicted_Reserves'] = model.predict(X_potential)
-
-# Convert predictions back to levels
-# df_sri_lanka_potential['Predicted_Reserves'] = np.exp(df_sri_lanka_potential['Log_Predicted_Reserves'])
-
-# Plot actual vs. potential reserves
 plt.figure(figsize=(12, 6))
-plt.plot(df_sri_lanka4['Year'], df_sri_lanka4['Reserves'] / 1e6, marker='o', label='Actual Reserves')
-plt.plot(df_sri_lanka_potential['Year'], df_sri_lanka_potential['Predicted_Reserves'] , marker='o', label='Potential Reserves')
-plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Textile_Exports'] / 1e3, marker='o', label='Actual Textile Exports')
-plt.plot(df_sri_lanka2['Year'], df_sri_lanka2['Predicted_Textile_Exports_per_Capita'] / 1e3, marker='o', label='Potential Textile Exports (Normalized Indicators)')
-plt.title('Actual vs. Potential Reserves for Sri Lanka')
+plt.plot(years, y_reserves_actual, marker='o', label='Actual Reserves')
+plt.plot(years, y_reserves_potential, marker='o', label='Potential Reserves')
+plt.plot(years, y_pred_potential, marker='x', label='Predicted Potential Reserves (Shapelet Features)', linestyle='--')
+plt.plot(years, y_pred_actual, marker='x', label='Predicted Actual Reserves (Shapelet Features)', linestyle='--')
+plt.title('Actual vs. Predicted Reserves Using Shapelet Features')
 plt.xlabel('Year')
 plt.ylabel('Reserves (US$ Million)')
 plt.legend()
 plt.grid(True)
 plt.gca().yaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
 plt.show()
-
-df_sri_lanka_potential[['Predicted_Reserves','Reserves']]
-
-df_sri_lanka_potential[['Textile_Exports','Predicted_Textile_Exports_per_Capita']]
